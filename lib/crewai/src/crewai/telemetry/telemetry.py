@@ -19,22 +19,14 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-    OTLPSpanExporter,
-)
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
-    SpanExportResult,
+    ConsoleSpanExporter,
 )
 from opentelemetry.trace import Span
 from typing_extensions import Self
 
-from crewai.telemetry.constants import (
-    CREWAI_TELEMETRY_BASE_URL,
-    CREWAI_TELEMETRY_SERVICE_NAME,
-)
 from crewai.telemetry.utils import (
     add_agent_fingerprint_to_span,
     add_crew_and_task_attributes,
@@ -49,29 +41,6 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from crewai.crew import Crew
     from crewai.task import Task
-
-
-class SafeOTLPSpanExporter(OTLPSpanExporter):
-    """Safe wrapper for OTLP span exporter that handles exceptions gracefully.
-
-    This exporter prevents telemetry failures from breaking the application
-    by catching and logging exceptions during span export.
-    """
-
-    def export(self, spans: Any) -> SpanExportResult:
-        """Export spans to the telemetry backend safely.
-
-        Args:
-            spans: Collection of spans to export.
-
-        Returns:
-            Export result status, FAILURE if an exception occurs.
-        """
-        try:
-            return super().export(spans)
-        except Exception as e:
-            logger.error(e)
-            return SpanExportResult.FAILURE
 
 
 class Telemetry:
@@ -107,18 +76,10 @@ class Telemetry:
             return
 
         try:
-            self.resource = Resource(
-                attributes={SERVICE_NAME: CREWAI_TELEMETRY_SERVICE_NAME},
-            )
             with suppress_warnings():
-                self.provider = TracerProvider(resource=self.resource)
+                self.provider = TracerProvider()
 
-            processor = BatchSpanProcessor(
-                SafeOTLPSpanExporter(
-                    endpoint=f"{CREWAI_TELEMETRY_BASE_URL}/v1/traces",
-                    timeout=30,
-                )
-            )
+            processor = BatchSpanProcessor(ConsoleSpanExporter())
 
             self.provider.add_span_processor(processor)
             self.ready = True
